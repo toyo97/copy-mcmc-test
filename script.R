@@ -1,6 +1,7 @@
 library(tidyverse)
 library(gtools) # for dirichlet
 library(matrixStats) # for logSumExp trick
+library(gridExtra) # for multiple plots on pdf
 
 # for reproducibility
 set.seed(42)
@@ -92,10 +93,24 @@ for (i in 1:n.test) {
 # compare if the mean of the samples is close 
 # to the true values
 # TODO: use confidence intervals to see how close
+# quantile(samples, (.025, .975))
+# TODO: print plots of the chain
 # the samples are to the true values
-apply(s.chain, MARGIN = 2, mean)
 dataset$s
+apply(s.chain, MARGIN = 2, function (x) {
+  return(quantile(x, c(.025, .975)))
+})
 
+# TODO: finish this!
+plts <- lapply(seq_len(C), FUN = function(i) {
+  sdf <- as.data.frame(cbind(idx = 1:n.test, val = s.chain[,i]))
+  ggplot(data = sdf) +
+    geom_line(mapping = aes(x = idx, y = val)) +
+    geom_hline(mapping = aes(yintercept = dataset$s[i], color = "red")) +
+    ggtitle(cat("Cell ", i, " samples")) +
+    xlab("samples") + ylab("val")
+})
+ggsave("s_plots.pdf", marrangeGrob(grobs = plts, nrow = 4, ncol = 2))
 # TEST 2
 # estimate pi and fix all the rest
 
@@ -116,6 +131,7 @@ pi.chain <- lapply(1:M, function(i) {
   return(pi.new)
 })
 
+
 # compare if the mean of the samples is close 
 # to the true values
 do.call(rbind,
@@ -125,20 +141,29 @@ do.call(rbind,
 )
 dataset$pi
 
+
+
 # TEST 3
 # estimate copy numbers and fix all the rest
 # Note: here we sample all the sequence together
 #   with forward-backward Gibbs sampling algorithm (FBG)
 
+pi0 <- rep(1/M, M)
 # compute the forward probabilities to the end recursively
 # initialize the forward prob to 1/M * b(y1)
-log.fwd <- -log(M) + sapply(0:(M-1), function (x) {
+log.fwd <- sapply(0:(M-1), function (x) {
   # compute the mean of the poisson for each copy number value
   # given s (for each cell) and the fixed mu value
   pois.mean.b <- dataset$s * x * dataset$mu[1]
-  log.emission <- sum(dpois(dataset$Y[1,], lambda = pois.mean.b, log = T))
-  return(log.emission)
+  log.fwd.el <- logSumExp(dpois(dataset$Y[1,], lambda = pois.mean.b, log = T)) * pi0[x + 1]
+  return(log.fwd.el)
 })
 
+log.fwd
+
+for (b in 2:B) {
+  log.fwd <- logSumExp(dpois(dataset$Y[b,], lambda = dataset$s * dataset$mu[b]))
+}
+
 # FIXME: fwd.filtered 
-fwd.filtered <- log.fwd - logSumExp(log.fwd)
+## fwd.filtered <- log.fwd - logSumExp(log.fwd)
